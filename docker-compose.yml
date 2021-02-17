@@ -1,0 +1,211 @@
+version: '3.7'
+services:
+  redis:
+    image: 'redis:5.0.5'
+    networks:
+      - air_network
+    # command: redis-server --requirepass redispass
+  
+  # uncomment initdb if you need initdb at first run
+  # initdb:
+  #   image: airflow:python-3.8
+  #   networks:
+  #     - air_network
+  #   environment:
+  #     - FERNET_KEY=46BKJoQYlPPOexq0OhDZnIlNepKFf87WFwLbfzqDDho=
+  #   configs:
+  #     - source: airflow_cfg
+  #       target: /usr/local/airflow/airflow.cfg
+  #     - source: airflow_ldapauth
+  #       target: /usr/local/lib/python3.8/site-packages/airflow/contrib/auth/backends/ldap_auth.py
+  #     - source: pip_conf
+  #       target: /etc/pip.conf
+  #     - source: odbc_conf
+  #       target: /etc/odbcinst.ini
+  #   volumes:
+  #     - /storage/nfs/configs/airflow/dags:/usr/local/airflow/dags
+  #     - /storage/nfs/configs/airflow/files:/usr/local/airflow/files
+  #     - /storage/nfs/logs/airflow:/usr/local/airflow/logs
+  #     - /var/run/docker.sock:/var/run/docker.sock
+  #   depends_on: 
+  #     - db_dev
+  #     - redis
+  #   entrypoint: ["sh", "-c", 'airflow initdb >> /usr/local/airflow/logs/$$(date +"%d%m%Y_%H-%M")_initdb.log']
+
+
+  webserver:
+    image: airflow:python-3.8
+    depends_on:
+      - redis
+      - db_dev
+      - initdb
+    environment:
+      - LOAD_EX=n
+      - FERNET_KEY=46BKJoQYlPPOexq0OhDZnIlNepKFf87WFwLbfzqDDho=
+      - EXECUTOR=Celery
+      - POSTGRES_USER=airflow
+      - POSTGRES_PASSWORD=airflow
+      - POSTGRES_DB=airflow
+      # - REDIS_PASSWORD=redispass
+    configs:
+      - source: airflow_cfg
+        target: /usr/local/airflow/airflow.cfg
+      - source: airflow_ldapauth
+        target: /usr/local/lib/python3.8/site-packages/airflow/contrib/auth/backends/ldap_auth.py
+      - source: pip_conf
+        target: /etc/pip.conf
+      - source: odbc_conf
+        target: /etc/odbcinst.ini
+    volumes:
+      - /storage/nfs/configs/airflow/dags:/usr/local/airflow/dags
+      - /storage/nfs/configs/airflow/files:/usr/local/airflow/files
+      - /storage/nfs/configs/airflow/packages:/usr/local/airflow/packages
+      - /storage/nfs/logs/airflow:/usr/local/airflow/logs
+      - /var/run/docker.sock:/var/run/docker.sock
+    ports:
+      - "8080:8080"
+    networks:
+      - air_network
+    entrypoint: ["sh", "-c", 'airflow webserver >> /usr/local/airflow/logs/$$(date +"%d%m%Y_%H-%M")_webserver.log']
+    healthcheck:
+      test: ["CMD-SHELL", "[ -f /usr/local/airflow/airflow-webserver.pid ]"]
+      interval: 30s
+      timeout: 30s
+      retries: 3
+
+  flower:
+    image: airflow:python-3.8
+    depends_on:
+      - redis
+      - db_dev
+      - initdb
+    environment:
+      - EXECUTOR=Celery
+      # - REDIS_PASSWORD=redispass
+    configs:
+      - source: airflow_cfg
+        target: /usr/local/airflow/airflow.cfg
+      - source: airflow_ldapauth
+        target: /usr/local/lib/python3.8/site-packages/airflow/contrib/auth/backends/ldap_auth.py
+      - source: pip_conf
+        target: /etc/pip.conf
+      - source: odbc_conf
+        target: /etc/odbcinst.ini
+    volumes: 
+      - /storage/nfs/logs/airflow:/usr/local/airflow/logs
+    ports:
+      - "5555:5555"
+    networks:
+      - air_network
+    entrypoint: ["sh", "-c", 'airflow flower >> /usr/local/airflow/logs/$$(date +"%d%m%Y_%H-%M")_flower.log']
+
+  scheduler:
+    image: airflow:python-3.8
+    depends_on:
+      - webserver
+      - db_dev
+      - initdb
+    volumes:
+      - /storage/nfs/configs/airflow/dags:/usr/local/airflow/dags
+      - /storage/nfs/configs/airflow/files:/usr/local/airflow/files
+      - /storage/nfs/configs/airflow/packages:/usr/local/airflow/packages
+      - /storage/nfs/logs/airflow:/usr/local/airflow/logs
+      - /var/run/docker.sock:/var/run/docker.sock
+    environment:
+      - LOAD_EX=n
+      - FERNET_KEY=46BKJoQYlPPOexq0OhDZnIlNepKFf87WFwLbfzqDDho=
+      - EXECUTOR=Celery
+      - POSTGRES_USER=airflow
+      - POSTGRES_PASSWORD=airflow
+      - POSTGRES_DB=airflow
+      # - REDIS_PASSWORD=redispass
+    configs:
+      - source: airflow_cfg
+        target: /usr/local/airflow/airflow.cfg
+      - source: airflow_ldapauth
+        target: /usr/local/lib/python3.8/site-packages/airflow/contrib/auth/backends/ldap_auth.py
+      - source: pip_conf
+        target: /etc/pip.conf
+      - source: odbc_conf
+        target: /etc/odbcinst.ini
+    networks:
+      - air_network
+    entrypoint: ["sh", "-c", 'airflow scheduler >> /usr/local/airflow/logs/$$(date +"%d%m%Y_%H-%M")_scheduler.log']
+
+  worker_1:
+    image: airflow:python-3.8
+    depends_on:
+      - scheduler
+      - db_dev
+      - initdb
+    volumes:
+      - /storage/nfs/configs/airflow/dags:/usr/local/airflow/dags
+      - /storage/nfs/configs/airflow/files:/usr/local/airflow/files
+      - /storage/nfs/configs/airflow/packages:/usr/local/airflow/packages
+      - /storage/nfs/logs/airflow:/usr/local/airflow/logs
+      - /var/run/docker.sock:/var/run/docker.sock
+    environment:
+      - FERNET_KEY=46BKJoQYlPPOexq0OhDZnIlNepKFf87WFwLbfzqDDho=
+      - EXECUTOR=Celery
+      - POSTGRES_USER=airflow
+      - POSTGRES_PASSWORD=airflow
+      - POSTGRES_DB=airflow
+      # - REDIS_PASSWORD=redispass
+    configs:
+      - source: airflow_cfg
+        target: /usr/local/airflow/airflow.cfg
+      - source: airflow_ldapauth
+        target: /usr/local/lib/python3.8/site-packages/airflow/contrib/auth/backends/ldap_auth.py
+      - source: pip_conf
+        target: /etc/pip.conf
+      - source: odbc_conf
+        target: /etc/odbcinst.ini
+    networks:
+      - air_network
+    entrypoint: ["sh", "-c", 'airflow worker -q py_3.8 -cn py_3.8 >> /usr/local/airflow/logs/$$(date +"%d%m%Y_%H-%M")_worker_38.log']
+  
+  worker_2:
+    image: airflow:python-2.7
+    depends_on:
+      - scheduler
+      - db_dev
+      - initdb
+    volumes:
+      - /storage/nfs/configs/airflow/dags:/usr/local/airflow/dags
+      - /storage/nfs/configs/airflow/files:/usr/local/airflow/files
+      - /storage/nfs/configs/airflow/packages2:/usr/local/airflow/packages
+      - /storage/nfs/logs/airflow:/usr/local/airflow/logs
+      - /var/run/docker.sock:/var/run/docker.sock
+    environment:
+      - FERNET_KEY=46BKJoQYlPPOexq0OhDZnIlNepKFf87WFwLbfzqDDho=
+      - EXECUTOR=Celery
+      - POSTGRES_USER=airflow
+      - POSTGRES_PASSWORD=airflow
+      - POSTGRES_DB=airflow
+      # - REDIS_PASSWORD=redispass
+    configs:
+      - source: airflow_cfg
+        target: /usr/local/airflow/airflow.cfg
+      - source: airflow_ldapauth
+        target: /usr/local/lib/python2.7/site-packages/airflow/contrib/auth/backends/ldap_auth.py
+      - source: pip_conf
+        target: /etc/pip.conf
+      - source: odbc_conf
+        target: /etc/odbcinst.ini
+    networks:
+      - air_network
+    entrypoint: ["sh", "-c", 'airflow worker -q py_2.7 -cn py_2.7 >> /usr/local/airflow/logs/$$(date +"%d%m%Y_%H-%M")_worker_27.log']
+
+networks:
+  air_network:
+    driver: overlay
+
+configs:
+  airflow_cfg:
+    file: /storage/nfs/configs/airflow/config/airflow.cfg
+  airflow_ldapauth:
+    file: /storage/nfs/configs/airflow/config/ldap_auth.py
+  pip_conf:
+    file: /storage/nfs/configs/airflow/config/pip.conf
+  odbc_conf:
+    file: /storage/nfs/configs/airflow/config/odbcinst.ini
